@@ -1,0 +1,38 @@
+using System;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace EntglDb.Core.Storage
+{
+    public interface IPeerStore
+    {
+        // Document Operations
+        Task SaveDocumentAsync(Document document, CancellationToken cancellationToken = default);
+        Task<Document?> GetDocumentAsync(string collection, string key, CancellationToken cancellationToken = default);
+
+        // Oplog Operations
+        Task AppendOplogEntryAsync(OplogEntry entry, CancellationToken cancellationToken = default);
+        
+        /// <summary>
+        /// Retrieves oplog entries strictly greater than the given timestamp.
+        /// </summary>
+        Task<IEnumerable<OplogEntry>> GetOplogAfterAsync(HlcTimestamp timestamp, CancellationToken cancellationToken = default);
+        
+        /// <summary>
+        /// Retrieves the latest HLC timestamp known by the store (max of log or docs).
+        /// </summary>
+        Task<HlcTimestamp> GetLatestTimestampAsync(CancellationToken cancellationToken = default);
+
+        // Atomic Batch (for Sync)
+        Task ApplyBatchAsync(IEnumerable<Document> documents, IEnumerable<OplogEntry> oplogEntries, CancellationToken cancellationToken = default);
+
+        // Query
+
+        /// <summary>
+        /// Queries documents in a collection.
+        /// </summary>
+        Task<IEnumerable<Document>> QueryDocumentsAsync(string collection, QueryNode queryExpression, int? skip = null, int? take = null, string? orderBy = null, bool ascending = true, CancellationToken cancellationToken = default);
+
+    }
+}

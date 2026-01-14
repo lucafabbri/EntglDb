@@ -1,0 +1,65 @@
+syntax = "proto3";
+
+package EntglDb.Network.Proto;
+
+option csharp_namespace = "EntglDb.Network.Proto";
+
+message HandshakeRequest {
+  string node_id = 1;
+  string auth_token = 2;
+}
+
+message HandshakeResponse {
+  string node_id = 1;
+  bool accepted = 2;
+}
+
+message GetClockRequest {
+}
+
+message ClockResponse {
+  int64 hlc_wall = 1;
+  int32 hlc_logic = 2;
+  string hlc_node = 3;
+}
+
+message PullChangesRequest {
+  int64 since_wall = 1;
+  int32 since_logic = 2;
+  string since_node = 3;
+}
+
+message ChangeSetResponse {
+  repeated ProtoOplogEntry entries = 1;
+}
+
+message PushChangesRequest {
+  repeated ProtoOplogEntry entries = 1;
+}
+
+message AckResponse {
+  bool success = 1;
+}
+
+message ProtoOplogEntry {
+  string collection = 1;
+  string key = 2;
+  string operation = 3; // "Put" or "Delete"
+  string json_data = 4;
+  int64 hlc_wall = 5;
+  int32 hlc_logic = 6;
+  string hlc_node = 7;
+}
+
+// Enum for wire framing (1 byte)
+enum MessageType {
+  Unknown = 0;
+  HandshakeReq = 1;
+  HandshakeRes = 2;
+  GetClockReq = 3;
+  ClockRes = 4;
+  PullChangesReq = 5;
+  ChangeSetRes = 6;
+  PushChangesReq = 7;
+  AckRes = 8;
+}
