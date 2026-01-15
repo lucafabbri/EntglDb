@@ -5,21 +5,12 @@ name: Publish to NuGet
 # Elenco degli eventi che attivano questo workflow
 on:
   push:
-    branches:
-      - main # Si attiva a ogni push sul branch 'main'
     tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+' # Si attiva quando viene pushato un tag come 'v1.0.0'
-      - 'v[0-9]+.[0-9]+.[0-9]+-alpha' # Tag alpha come 'v0.2.0-alpha'
-      - 'v[0-9]+.[0-9]+.[0-9]+-beta' # Tag beta come 'v1.0.0-beta'
-  pull_request:
-    branches:
-      - main # Si attiva quando viene aperta/aggiornata una PR verso 'main'
-  workflow_dispatch: # Permette di avviare il workflow manualmente dalla UI di GitHub
+      - 'v*'
+  workflow_dispatch:
 
 jobs:
   build_and_publish:
-    # SPECIFICA L'AMBIENTE PER ACCEDERE AI SEGRETI CORRISPONDENTI
-    environment: Production
     runs-on: ubuntu-latest
     
     # AGGIUNGE I PERMESSI NECESSARI PER CREARE UNA RELEASE
