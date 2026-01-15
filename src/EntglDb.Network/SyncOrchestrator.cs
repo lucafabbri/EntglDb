@@ -2,6 +2,8 @@ using System;
 using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Threading.Tasks;
+using System.Linq;
 using Microsoft.Extensions.Logging;
 using EntglDb.Core;
 using EntglDb.Core.Storage;
@@ -75,10 +77,16 @@ namespace EntglDb.Network
                     var targets = peers.OrderBy(x => _random.Next()).Take(3).ToList();
 
                     // Execute sync in parallel with a max degree of parallelism
+#if NET6_0_OR_GREATER
                     await Parallel.ForEachAsync(targets, new ParallelOptions { MaxDegreeOfParallelism = 3, CancellationToken = token }, async (peer, ct) => 
                     {
                         await TrySyncWithPeer(peer, ct);
                     });
+#else
+                    // NetStandard 2.0 fallback: Use Task.WhenAll (Since we only take 3 targets, this effectively runs them in parallel)
+                    var tasks = targets.Select(peer => TrySyncWithPeer(peer, token));
+                    await Task.WhenAll(tasks);
+#endif
                 }
                 catch (OperationCanceledException) { break; }
                 catch (Exception ex)
