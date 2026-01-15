@@ -1,0 +1,23 @@
+v0.4:
+  - title: Getting Started
+    url: /v0.4/getting-started.html
+  - title: Architecture
+    url: /v0.4/architecture.html
+  - title: Deployment (LAN)
+    url: /v0.4/deployment-lan.html
+  - title: API Reference
+    url: /v0.4/api-reference.html
+  - title: Production Hardening
+    url: /v0.4/production-hardening.html
+
+v0.2:
+  - title: Getting Started
+    url: /v0.2/getting-started.html
+  - title: Architecture
+    url: /v0.2/architecture.html
+  - title: Deployment (LAN)
+    url: /v0.2/deployment-lan.html
+  - title: API Reference
+    url: /v0.2/api-reference.html
+  - title: Production Hardening
+    url: /v0.2/production-hardening.html

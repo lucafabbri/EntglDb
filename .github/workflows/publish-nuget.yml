@@ -11,6 +11,7 @@ on:
 
 jobs:
   build_and_publish:
+    environment: Production
     runs-on: ubuntu-latest
     
     # AGGIUNGE I PERMESSI NECESSARI PER CREARE UNA RELEASE
