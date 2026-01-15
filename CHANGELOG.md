@@ -16,6 +16,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+<a name="0.3.0"></a>
+## [0.3.0] - 2026-01-15
+
+### Changed
+- **Stable Release**: First stable release, promoted from 0.2.0-alpha
+- All production hardening features now stable and ready for LAN deployment
+
+### Added
+- GitHub Actions workflow for automated NuGet publishing
+- CHANGELOG.md for version tracking
+
+---
+
 <a name="0.2.0-alpha"></a>
 ## [0.2.0-alpha] - 2026-01-15
 
@@ -81,6 +94,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/lucafabbri/EntglDb/compare/v0.2.0-alpha...HEAD
+[Unreleased]: https://github.com/lucafabbri/EntglDb/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/lucafabbri/EntglDb/compare/v0.2.0-alpha...v0.3.0
 [0.2.0-alpha]: https://github.com/lucafabbri/EntglDb/compare/v0.1.0-alpha...v0.2.0-alpha
 [0.1.0-alpha]: https://github.com/lucafabbri/EntglDb/releases/tag/v0.1.0-alpha
