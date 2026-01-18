@@ -38,11 +38,11 @@ namespace EntglDb.Network
         public async Task ConnectAsync(CancellationToken token)
         {
             if (IsConnected) return;
-            
+
             var parts = _peerAddress.Split(':');
             if (parts.Length != 2) throw new ArgumentException("Invalid address format");
-            
-            await _client.ConnectAsync(parts[0], int.Parse(parts[1])); 
+
+            await _client.ConnectAsync(parts[0], int.Parse(parts[1]));
             _stream = _client.GetStream();
         }
 
@@ -65,12 +65,26 @@ namespace EntglDb.Network
             }
 
             var req = new HandshakeRequest { NodeId = myNodeId, AuthToken = authToken ?? "" };
+
+            if (CompressionHelper.IsBrotliSupported)
+            {
+                req.SupportedCompression.Add("brotli");
+            }
+
             await SendMessageAsync(MessageType.HandshakeReq, req);
-            
+
             var (type, payload) = await ReadMessageAsync(token);
             if (type != MessageType.HandshakeRes) return false;
-            
+
             var res = HandshakeResponse.Parser.ParseFrom(payload);
+
+            // Negotiation Result
+            if (res.SelectedCompression == "brotli")
+            {
+                _useCompression = true;
+                _logger.LogInformation("Brotli compression negotiated.");
+            }
+
             HasHandshaked = res.Accepted;
             return res.Accepted;
         }
@@ -81,7 +95,7 @@ namespace EntglDb.Network
         public async Task<HlcTimestamp> GetClockAsync(CancellationToken token)
         {
             await SendMessageAsync(MessageType.GetClockReq, new GetClockRequest());
-            
+
             var (type, payload) = await ReadMessageAsync(token);
             if (type != MessageType.ClockRes) throw new Exception("Unexpected response");
 
@@ -94,11 +108,11 @@ namespace EntglDb.Network
         /// </summary>
         public async Task<List<OplogEntry>> PullChangesAsync(HlcTimestamp since, CancellationToken token)
         {
-            var req = new PullChangesRequest 
-            { 
+            var req = new PullChangesRequest
+            {
                 SinceWall = since.PhysicalTime,
                 SinceLogic = since.LogicalCounter,
-                SinceNode = since.NodeId 
+                SinceNode = since.NodeId
             };
             await SendMessageAsync(MessageType.PullChangesReq, req);
 
@@ -106,7 +120,7 @@ namespace EntglDb.Network
             if (type != MessageType.ChangeSetRes) throw new Exception("Unexpected response");
 
             var res = ChangeSetResponse.Parser.ParseFrom(payload);
-            
+
             return res.Entries.Select(e => new OplogEntry(
                 e.Collection,
                 e.Key,
@@ -125,9 +139,10 @@ namespace EntglDb.Network
             var entryList = entries.ToList();
             if (entryList.Count == 0) return;
 
-            foreach(var e in entryList)
+            foreach (var e in entryList)
             {
-                req.Entries.Add(new ProtoOplogEntry {
+                req.Entries.Add(new ProtoOplogEntry
+                {
                     Collection = e.Collection,
                     Key = e.Key,
                     Operation = e.Operation.ToString(),
@@ -139,54 +154,62 @@ namespace EntglDb.Network
             }
 
             await SendMessageAsync(MessageType.PushChangesReq, req);
-            
+
             var (type, payload) = await ReadMessageAsync(token);
             if (type != MessageType.AckRes) throw new Exception("Push failed");
         }
 
+        private bool _useCompression = false; // Negotiated after handshake
+
         private async Task SendMessageAsync(MessageType type, IMessage message)
         {
             if (_stream == null) throw new InvalidOperationException("Not connected");
-            
-            byte[] payloadBytes = message.ToByteArray();
 
+            byte[] payloadBytes = message.ToByteArray();
+            byte compressionFlag = 0x00; // None
+
+            // 1. Compress (if enabled and large)
+            // Note: We don't compress Handshake/SecureEnv messages themselves, only the inner payload if feasible.
+            // But here 'type' is the logical type.
+            // If we are about to Encrypt, we compress FIRST.
+
+            if (_useCompression && payloadBytes.Length > CompressionHelper.THRESHOLD && type != MessageType.SecureEnv)
+            {
+                payloadBytes = CompressionHelper.Compress(payloadBytes);
+                compressionFlag = 0x01; // Brotli
+            }
+
+            // 2. Encrypt
             if (_cipherState != null)
             {
-                // Encrypt payload
-                // New Wire format for Encrypted: [Length] [Type=SecureEnv] [SecureEnvelopeBytes]
-                // SecureEnvelope contains the actual Type? No, the inner message is just bytes.
-                // We need to know the inner type.
-                // Protocol update rationale:
-                // We wrap the *Original* message (Type + Payload) ? 
-                // Or just the payload? If just payload, the outer Type is still visible? 
-                // "Payload Security: Business messages ... must be encrypted"
-                // The prompt says: "Encrypted Protobuf Envelope ... acts as a container ... ciphertext ... message must be serialized to bytes first"
-                // The outer framing is [Length] [Type].
-                // If we use Type=SecureEnv, the receiver knows to decrypt.
-                // But inside, we need to know the *Original* type.
-                // So we should encrypt [Type byte] + [Payload].
-                
-                var dataToEncrypt = new byte[1 + payloadBytes.Length];
+                // Inner format: [Type (1)] [Compression (1)] [Payload (N)]
+                var dataToEncrypt = new byte[2 + payloadBytes.Length];
                 dataToEncrypt[0] = (byte)type;
-                Buffer.BlockCopy(payloadBytes, 0, dataToEncrypt, 1, payloadBytes.Length);
-                
+                dataToEncrypt[1] = compressionFlag;
+                Buffer.BlockCopy(payloadBytes, 0, dataToEncrypt, 2, payloadBytes.Length);
+
                 var (ciphertext, iv, tag) = CryptoHelper.Encrypt(dataToEncrypt, _cipherState.EncryptKey);
-                
-                var env = new SecureEnvelope 
-                { 
+
+                var env = new SecureEnvelope
+                {
                     Ciphertext = ByteString.CopyFrom(ciphertext),
                     Nonce = ByteString.CopyFrom(iv),
                     AuthTag = ByteString.CopyFrom(tag)
                 };
-                
+
                 payloadBytes = env.ToByteArray();
                 type = MessageType.SecureEnv;
+                compressionFlag = 0x00; // Outer envelope is not compressed
             }
 
-             var length = BitConverter.GetBytes(payloadBytes.Length);
-            
+            // 3. Framing: [Length (4)] [Type (1)] [Compression (1)] [Payload (N)]
+            // We are adding Compression byte to the wire frame as well for symmetry/unencrypted scenarios.
+
+            var length = BitConverter.GetBytes(payloadBytes.Length);
+
             await _stream.WriteAsync(length, 0, 4);
             _stream.WriteByte((byte)type);
+            _stream.WriteByte(compressionFlag); // v0.7.0 addition
             await _stream.WriteAsync(payloadBytes, 0, payloadBytes.Length);
         }
 
@@ -197,36 +220,54 @@ namespace EntglDb.Network
             var lenBuf = new byte[4];
             int read = await ReadExactAsync(lenBuf, 0, 4, token);
             if (read == 0) throw new Exception("Connection closed");
-            
+
             int length = BitConverter.ToInt32(lenBuf, 0);
-            
+
             int typeByte = _stream.ReadByte();
             if (typeByte == -1) throw new Exception("Connection closed");
-            
+
+            int compByte = _stream.ReadByte(); // v0.7.0
+            if (compByte == -1) throw new Exception("Connection closed (missing comp flag)");
+
             var payload = new byte[length];
             await ReadExactAsync(payload, 0, length, token);
-            
+
             var msgType = (MessageType)typeByte;
 
+            // Handle Secure Envelope
             if (msgType == MessageType.SecureEnv)
             {
                 if (_cipherState == null) throw new Exception("Received encrypted message but no cipher state established");
-                
+
                 var env = SecureEnvelope.Parser.ParseFrom(payload);
                 var decrypted = CryptoHelper.Decrypt(
-                    env.Ciphertext.ToByteArray(), 
-                    env.Nonce.ToByteArray(), 
-                    env.AuthTag.ToByteArray(), 
+                    env.Ciphertext.ToByteArray(),
+                    env.Nonce.ToByteArray(),
+                    env.AuthTag.ToByteArray(),
                     _cipherState.DecryptKey);
-                
-                // Decrypted data format: [Type (1)] + [Payload (N)]
-                if (decrypted.Length < 1) throw new Exception("Decrypted payload too short");
-                
+
+                // Decrypted data format: [Type (1)] [Compression (1)] [Payload (N)]
+                if (decrypted.Length < 2) throw new Exception("Decrypted payload too short");
+
                 msgType = (MessageType)decrypted[0];
-                var innerPayload = new byte[decrypted.Length - 1];
-                Buffer.BlockCopy(decrypted, 1, innerPayload, 0, innerPayload.Length);
-                
+                int innerComp = decrypted[1];
+
+                var innerPayload = new byte[decrypted.Length - 2];
+                Buffer.BlockCopy(decrypted, 2, innerPayload, 0, innerPayload.Length);
+
+                // Decompress inner payload if needed
+                if (innerComp == 0x01)
+                {
+                    innerPayload = CompressionHelper.Decompress(innerPayload);
+                }
+
                 return (msgType, innerPayload);
+            }
+
+            // Handle Unencrypted Compression (unlikely for business data but possible for handshake/errors)
+            if (compByte == 0x01)
+            {
+                payload = CompressionHelper.Decompress(payload);
             }
 
             return (msgType, payload);

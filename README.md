@@ -6,8 +6,13 @@
 
 [![.NET Version](https://img.shields.io/badge/.NET-10.0-purple)](https://dotnet.microsoft.com/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.6.1-green)](https://github.com/lucafabbri/EntglDb/releases)
+## Status
+![Version](https://img.shields.io/badge/version-0.7.0-blue.svg)
+![Build](https://img.shields.io/badge/build-passing-brightgreen.svg)
 
+**Latest Release**: v0.7.0 (Brotli Compression, Uniform Versioning)
+
+EntglDb is a mesh database...
 [Features](#features) • [Quick Start](#quick-start) • [Documentation](#documentation) • [Examples](#examples) • [Contributing](#contributing)
 
 </div>
@@ -63,6 +68,7 @@
 - **AES-256-CBC Encryption** for data in transit
 - **HMAC-SHA256 Authentication** to prevent tampering
 - **Optional secure mode** for sensitive deployments
+- **Brotli Compression** (v0.7.0) for efficient bandwidth usage
 
 ### 🔀 Advanced Conflict Resolution (v0.6.0)
 - **Last Write Wins (LWW)** - Simple timestamp-based resolution
@@ -400,7 +406,7 @@ EntglDbMapper.Global.Entity<Product>()
 - [x] **Performance benchmarks** and regression tests
 - [ ] Merkle Trees for efficient sync
 - [ ] Query optimization & advanced indexing
-- [ ] Compressed sync protocol
+- [x] **Compressed sync protocol** (Brotli) (v0.7.0)
 - [ ] Admin UI / monitoring dashboard
 
 ---

@@ -96,30 +96,41 @@ namespace EntglDb.Network
                 _logger.LogDebug("Client Connected: {Endpoint}", remoteEp);
                 try
                 {
+                    bool useCompression = false;
+
                     while (client.Connected && !token.IsCancellationRequested)
                     {
                         var (type, payload) = await ReadMessageAsync(stream, token);
                         if (type == MessageType.Unknown) break; // EOF or Error
+
+                        // Handshake Loop
+                        if (type == MessageType.HandshakeReq)
+                        {
+                            var hReq = HandshakeRequest.Parser.ParseFrom(payload);
+                            bool valid = await _authenticator.ValidateAsync(hReq.NodeId, hReq.AuthToken);
+                            if (!valid)
+                            {
+                                _logger.LogWarning("Authentication failed for Node {NodeId}", hReq.NodeId);
+                                await SendMessageAsync(stream, MessageType.HandshakeRes, new HandshakeResponse { NodeId = _nodeId, Accepted = false }, false);
+                                return;
+                            }
+                            
+                            var hRes = new HandshakeResponse { NodeId = _nodeId, Accepted = true };
+                            if (CompressionHelper.IsBrotliSupported && hReq.SupportedCompression.Contains("brotli"))
+                            {
+                                hRes.SelectedCompression = "brotli";
+                                useCompression = true;
+                            }
+                            
+                            await SendMessageAsync(stream, MessageType.HandshakeRes, hRes, false); 
+                            continue;
+                        }
 
                         IMessage? response = null;
                         MessageType resType = MessageType.Unknown;
 
                         switch (type)
                         {
-                            case MessageType.HandshakeReq:
-                                var hReq = HandshakeRequest.Parser.ParseFrom(payload);
-                                bool valid = await _authenticator.ValidateAsync(hReq.NodeId, hReq.AuthToken);
-                                if (!valid)
-                                {
-                                    _logger.LogWarning("Authentication failed for Node {NodeId}", hReq.NodeId);
-                                    await SendMessageAsync(stream, MessageType.HandshakeRes, new HandshakeResponse { NodeId = _nodeId, Accepted = false });
-                                    return; // Close connection on auth failure
-                                }
-                                
-                                response = new HandshakeResponse { NodeId = _nodeId, Accepted = true };
-                                resType = MessageType.HandshakeRes;
-                                break;
-                            
                             case MessageType.GetClockReq:
                                 var clock = await _store.GetLatestTimestampAsync(token);
                                 response = new ClockResponse 
@@ -162,8 +173,6 @@ namespace EntglDb.Network
                                     new HlcTimestamp(e.HlcWall, e.HlcLogic, e.HlcNode)
                                 ));
 
-                                // Apply changes to the store. 
-                                // We pass an empty document list because the store implementation derives document state directly from the Oplog entries.
                                 await _store.ApplyBatchAsync(Enumerable.Empty<Document>(), entries, token);
                                 
                                 response = new AckResponse { Success = true };
@@ -173,7 +182,7 @@ namespace EntglDb.Network
 
                         if (response != null)
                         {
-                            await SendMessageAsync(stream, resType, response);
+                            await SendMessageAsync(stream, resType, response, useCompression);
                         }
                     }
                 }
@@ -184,13 +193,23 @@ namespace EntglDb.Network
             }
         }
 
-        private async Task SendMessageAsync(NetworkStream stream, MessageType type, IMessage message)
+        private async Task SendMessageAsync(NetworkStream stream, MessageType type, IMessage message, bool useCompression)
         {
-            var bytes = message.ToByteArray();
-            var length = BitConverter.GetBytes(bytes.Length);
+            var payloadBytes = message.ToByteArray();
+            byte compressionFlag = 0x00;
+
+            if (useCompression && payloadBytes.Length > CompressionHelper.THRESHOLD)
+            {
+                payloadBytes = CompressionHelper.Compress(payloadBytes);
+                compressionFlag = 0x01;
+            }
+
+            // Framing: [Length] [Type] [Comp] [Payload]
+            var length = BitConverter.GetBytes(payloadBytes.Length);
             await stream.WriteAsync(length, 0, 4);
             stream.WriteByte((byte)type);
-            await stream.WriteAsync(bytes, 0, bytes.Length);
+            stream.WriteByte(compressionFlag);
+            await stream.WriteAsync(payloadBytes, 0, payloadBytes.Length);
         }
 
         private async Task<(MessageType, byte[]?)> ReadMessageAsync(NetworkStream stream, CancellationToken token)
@@ -208,6 +227,9 @@ namespace EntglDb.Network
             int typeByte = stream.ReadByte();
             if (typeByte == -1) return (MessageType.Unknown, null);
 
+            int compByte = stream.ReadByte();
+            if (compByte == -1) return (MessageType.Unknown, null);
+
             var payload = new byte[length];
             total = 0;
             while (total < length)
@@ -216,6 +238,12 @@ namespace EntglDb.Network
                  if (r == 0) return (MessageType.Unknown, null);
                  total += r;
             }
+            
+            if (compByte == 0x01)
+            {
+                payload = CompressionHelper.Decompress(payload);
+            }
+
             return ((MessageType)typeByte, payload);
         }
     }
