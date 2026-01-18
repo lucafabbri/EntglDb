@@ -16,8 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-<a name="0.5.0"></a>
-## [0.5.0] - 2026-01-16
+<a name="0.6.1"></a>
+## [0.6.1] - 2026-01-18
+
+### Fixed
+- **Serialization**: Standardized JSON serialization to use `snake_case` naming policy for `node_id` and `tcp_port` in `DiscoveryBeacon` to match other platforms.
+- **Discovery**: Improved interoperability with Android nodes by ensuring consistent payload format.
+
+<a name="0.6.0"></a>
+## [0.6.0] - 2026-01-16
 
 ### Added
 - **Batch Operations**: `PutMany` and `DeleteMany` for efficient bulk processing

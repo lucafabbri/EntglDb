@@ -99,24 +99,6 @@ namespace EntglDb.Network
             var peer = new PeerNode(peerId, endpoint, DateTimeOffset.UtcNow);
             
             _activePeers.AddOrUpdate(peerId, peer, (key, old) => peer);
-
-            // Log strictly new peers or re-discovered ones? 
-            // AddOrUpdate is atomic.
-            // Logging "Discovered" every 5s is noisy. We should only log if it's NEW.
-            // But ConcurrentDictionary doesn't tell us if it was update or add easily without tricky logic or Compare.
-            // For now, let's just rely on the fact that existing logic logged only on Add.
-            // I'll stick to AddOrUpdate but if we want logs we need to check existence.
-            // Actually, `TryAdd` was used before.
-            // If I use `AddOrUpdate`, I overwrite.
-            // Let's do:
-            /*
-            if (_activePeers.ContainsKey(peerId)) {
-                _activePeers[peerId] = peer; // Update timestamp
-            } else {
-                 if (_activePeers.TryAdd(peerId, peer)) log...
-            }
-            */
-            // But that's racey. AddOrUpdate is better.
         }
 
         public void Stop()
@@ -194,7 +176,10 @@ namespace EntglDb.Network
 
         private class DiscoveryBeacon
         {
+            [System.Text.Json.Serialization.JsonPropertyName("node_id")]
             public string NodeId { get; set; } = "";
+            
+            [System.Text.Json.Serialization.JsonPropertyName("tcp_port")]
             public int TcpPort { get; set; }
         }
     }

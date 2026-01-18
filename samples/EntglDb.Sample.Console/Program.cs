@@ -94,7 +94,12 @@ namespace EntglDb.Sample.Console
             builder.Services.AddSingleton<PeerDatabase>(sp => 
             {
                 var store = sp.GetRequiredService<IPeerStore>();
-                return new PeerDatabase(store, nodeId);
+                var jsonOptions = new System.Text.Json.JsonSerializerOptions 
+                { 
+                    PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.SnakeCaseLower,
+                    PropertyNameCaseInsensitive = true
+                };
+                return new PeerDatabase(store, nodeId, jsonOptions);
             });
 
             // Hosted Services (Lifter Pattern)

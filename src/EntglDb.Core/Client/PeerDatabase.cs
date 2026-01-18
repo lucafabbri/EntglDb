@@ -26,12 +26,23 @@ namespace EntglDb.Core
         /// </summary>
         /// <param name="store">The persistence store for documents and oplog.</param>
         /// <param name="nodeId">The unique identifier for this node.</param>
-        public PeerDatabase(IPeerStore store, string nodeId = "local")
+        private readonly JsonSerializerOptions _jsonOptions;
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="PeerDatabase"/> class.
+        /// </summary>
+        /// <param name="store">The persistence store for documents and oplog.</param>
+        /// <param name="nodeId">The unique identifier for this node.</param>
+        /// <param name="jsonOptions">Optional JSON serialization options.</param>
+        public PeerDatabase(IPeerStore store, string nodeId = "local", JsonSerializerOptions? jsonOptions = null)
         {
             _store = store ?? throw new ArgumentNullException(nameof(store));
             _nodeId = nodeId;
             _localClock = new HlcTimestamp(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), 0, _nodeId);
+            _jsonOptions = jsonOptions ?? new JsonSerializerOptions();
         }
+
+        internal JsonSerializerOptions JsonOptions => _jsonOptions;
 
         /// <summary>
         /// Gets the unique identifier for this node.
@@ -146,7 +157,7 @@ namespace EntglDb.Core
 
         public async Task Put(string key, object document, CancellationToken cancellationToken = default)
         {
-            var json = JsonSerializer.SerializeToElement(document);
+            var json = JsonSerializer.SerializeToElement(document, _db.JsonOptions);
             var timestamp = _db.Tick();
 
             var oplog = new OplogEntry(_name, key, OperationType.Put, json, timestamp);
@@ -165,7 +176,7 @@ namespace EntglDb.Core
             {
                 var key = kvp.Key;
                 var document = kvp.Value;
-                var json = JsonSerializer.SerializeToElement(document);
+                var json = JsonSerializer.SerializeToElement(document, _db.JsonOptions);
                 var timestamp = _db.Tick();
 
                 var oplog = new OplogEntry(_name, key, OperationType.Put, json, timestamp);
@@ -186,7 +197,7 @@ namespace EntglDb.Core
             var doc = await _db.Store.GetDocumentAsync(_name, key, cancellationToken);
             if (doc == null || doc.IsDeleted) return default;
 
-            return JsonSerializer.Deserialize<T>(doc.Content);
+            return JsonSerializer.Deserialize<T>(doc.Content, _db.JsonOptions);
         }
 
         public async Task Delete(string key, CancellationToken cancellationToken = default)
@@ -251,7 +262,7 @@ namespace EntglDb.Core
                 {
                     try 
                     {
-                        var item = JsonSerializer.Deserialize<T>(d.Content);
+                        var item = JsonSerializer.Deserialize<T>(d.Content, _db.JsonOptions);
                         
                         // If query translation failed, we perform fallback filtering in memory.
                         // If translation succeeded, the Store has already filtered the content.
